@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Improved Animal Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #controls {
+            background-color: #333;
+            color: white;
+            padding: 10px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        input[type="range"] {
+            width: 200px;
+        }
+        #status-bar {
+            background-color: #222;
+            color: #fff;
+            padding: 10px;
+            text-align: center;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div id="status-bar"></div>
+    <div id="canvas-container">
+        <canvas id="zoo"></canvas>
+    </div>
+    <div id="controls">
+        <button id="pause-button">Pause/Resume</button>
+        <button id="restart-button">Restart</button>
+        <button id="spawn-animals">Spawn Animals</button>
+        <div>
+            <label for="speed-slider">Speed:</label>
+            <input type="range" id="speed-slider" min="0.1" max="5" step="0.1" value="1">
+        </div>
+        <div>
+            <label for="food-rate">Food Rate:</label>
+            <input type="range" id="food-rate" min="1" max="100" value="50">
+        </div>
+    </div>
+    <script>
+        window.onload = function() {
+            let pauseSimulation = false;
+            let deaths = 0;
+            let livingAnimals = 0;
+            let maxLevel = 10;
+            let timeScale = 1;
+
+            const canvas = document.getElementById('zoo');
+            const ctx = canvas.getContext('2d');
+            const speedSlider = document.getElementById('speed-slider');
+            const statusBar = document.getElementById('status-bar');
+
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight - 100; // Adjust for controls and status bar
+            }
+
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            speedSlider.addEventListener('input', function() {
+                timeScale = parseFloat(this.value);
+            });
+
+            class Animal {
+                constructor(x, y, color, level = 0, speed = Math.min(Math.floor(Math.random() * 5) + 1, 5), iq = Math.floor(Math.random() * 10) + 1, metabolism = Math.min(Math.floor(Math.random() * 5) + 1, 3)) {
+                    this.x = x;
+                    this.y = y;
+                    this.size = 10;
+                    this.food = 88;
+                    this.dead = false;
+                    this.speed = speed;
+                    this.iq = iq;
+                    this.metabolism = metabolism;
+                    this.deathTime = null;
+                    this.color = color || `hsl(${Math.random() * 360}, 100%, 50%)`;
+                    this.level = level;
+                    this.reproduceCooldown = 0;
+                    this.hasEaten = false;
+                    this.isMaxLevel = false;
+                }
+
+                draw() {
+                    const radius = this.dead ? this.size / 2 : this.size;
+                    ctx.fillStyle = this.dead ? 'rgba(128, 128, 128, 0.5)' : this.color;
+                    ctx.strokeStyle = this.dead ? 'rgba(0, 0, 0, 0.5)' : 'black';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, radius, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    if (this.isMaxLevel) {
+                        ctx.save();
+                        ctx.strokeStyle = 'gold';
+                        ctx.lineWidth = 3;
+                        ctx.setLineDash([5, 5]);
+                        ctx.beginPath();
+                        ctx.arc(this.x, this.y, radius + 5, 0, 2 * Math.PI);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    ctx.fillStyle = 'white';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.font = '10px Arial';
+                    ctx.fillText(this.level, this.x, this.y);
+                }
+
+                move(foodItems) {
+                    if (!this.dead) {
+                        let newX = this.x;
+                        let newY = this.y;
+                        const angle = Math.random() * 2 * Math.PI;
+
+                        if (Math.random() < this.iq / 10 && foodItems.length > 0) {
+                            const nearestFood = foodItems.reduce((nearest, food) => {
+                                const d = Math.sqrt((food.x - this.x) ** 2 + (food.y - this.y) ** 2);
+                                return (nearest && nearest.d < d) ? nearest : { food, d };
+                            }, null).food;
+                            const dx = nearestFood.x - this.x;
+                            const dy = nearestFood.y - this.y;
+                            const d = Math.sqrt(dx ** 2 + dy ** 2);
+                            newX += 0.5 * this.speed * dx / d * timeScale;
+                            newY += 0.5 * this.speed * dy / d * timeScale;
+                        } else {
+                            newX += 0.5 * this.speed * Math.cos(angle) * timeScale;
+                            newY += 0.5 * this.speed * Math.sin(angle) * timeScale;
+                        }
+
+                        if (newX - this.size < 0 || newX + this.size > canvas.width) {
+                            newX = this.x - 0.5 * this.speed * Math.cos(angle) * timeScale;
+                        }
+                        if (newY - this.size < 0 || newY + this.size > canvas.height) {
+                            newY = this.y - 0.5 * this.speed * Math.sin(angle) * timeScale;
+                        }
+
+                        this.x = newX;
+                        this.y = newY;
+                    }
+                }
+
+                consume(foodItems, animals) {
+                    if (!this.dead) {
+                        foodItems.forEach((food, index) => {
+                            if (Math.sqrt((food.x - this.x) ** 2 + (food.y - this.y) ** 2) < this.size + food.size) {
+                                this.food++;
+                                this.hasEaten = true;
+                                foodItems.splice(index, 1);
+                            }
+                        });
+                        animals.forEach((animal) => {
+                            if (!animal.dead && this.level >= animal.level + 2 && this.color !== animal.color) {
+                                if (Math.sqrt((animal.x - this.x) ** 2 + (animal.y - this.y) ** 2) < this.size + animal.size) {
+                                    animal.dead = true;
+                                    if (!animal.dead) {
+                                        livingAnimals--;
+                                    }
+                                    deaths++;
+                                }
+                            }
+                        });
+                    }
+                }
+
+                update(timeScale) {
+                    this.food -= this.metabolism * timeScale / 10;
+                    let newLevel = Math.floor(this.food / 20);
+                    if (newLevel > this.level) {
+                        this.level = newLevel;
+                        this.size *= 1.1;
+                    }
+                    this.level = Math.floor(this.food / 20);
+                    this.reproduceCooldown = Math.max(0, this.reproduceCooldown - timeScale);
+                    if (this.food <= 0 && !this.dead) {
+                        this.dead = true;
+                        livingAnimals--;
+                        this.deathTime = Date.now();
+                    }
+                    if (this.level >= 10 && !this.isMaxLevel) {
+                        this.isMaxLevel = true;
+                        this.size *= 1.1;
+                    }
+
+                    if (this.food >= 55 && this.reproduceCooldown <= 0 && this.hasEaten) {
+                        this.food -= 20;
+                        this.reproduceCooldown = 1.5;
+                        this.hasEaten = false;
+                        const x = this.x + Math.random() * 20 - 10;
+                        const y = this.y + Math.random() * 20 - 10;
+                        const speed = Math.max(1, this.speed + Math.ceil(Math.random() * 3) - 1);
+                        const iq = Math.max(1, this.iq + Math.ceil(Math.random() * 3) - 1);
+                        const metabolism = Math.max(1, this.metabolism + Math.ceil(Math.random() * 3) - 1);
+                        return new Animal(x, y, this.color, this.level, speed, iq, metabolism);
+                    }
+
+                    return null;
+                }
+            }
+
+            class Food {
+                constructor(x, y) {
+                    this.x = x;
+                    this.y = y;
+                    this.size = 5;
+                }
+
+                draw() {
+                    ctx.fillStyle = 'green';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+
+            let animals = [];
+            let foodItems = [];
+            let colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#B19CD9', '#FF92A5', '#9BDB47', '#D9A9CB'];
+
+            function restart() {
+                pauseSimulation = false;
+                animals = [];
+                foodItems = [];
+                livingAnimals = 0;
+                deaths = 0;
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                const lakeWidth = Math.random() * 0.15 * canvas.width;
+                const lakeHeight = Math.random() * 0.15 * canvas.height;
+                const lakeX = Math.random() * (canvas.width - lakeWidth);
+                const lakeY = Math.random() * (canvas.height - lakeHeight);
+                ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
+                ctx.fillRect(lakeX, lakeY, lakeWidth, lakeHeight);
+
+                for (let i = 0; i < 10; i++) {
+                    const x = Math.random() * (canvas.width - 20) + 10;
+                    const y = Math.random() * (canvas.height - 20) + 10;
+                    const colorIndex = i % colors.length;
+                    animals.push(new Animal(x, y, colors[colorIndex]));
+                    livingAnimals++;
+                }
+            }
+
+            function spawnFood() {
+                const x = Math.random() * (canvas.width - 10) + 5;
+                const y = Math.random() * (canvas.height - 10) + 5;
+                foodItems.push(new Food(x, y));
+            }
+
+            function displayStatus() {
+                const animalCount = livingAnimals;
+                const foodCount = foodItems.length;
+                statusBar.textContent = `Animals: ${animalCount} | Deaths: ${deaths} | Food: ${foodCount}`;
+            }
+
+            function removeDeadAnimals() {
+                const now = Date.now();
+                for (let i = 0; i < animals.length; i++) {
+                    if (animals[i].dead && now - animals[i].deathTime >= 3000) {
+                        animals.splice(i, 1);
+                        i--;
+                    }
+                }
+            }
+
+            function update() {
+                if (!pauseSimulation && timeScale > 0) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    displayStatus();
+
+                    removeDeadAnimals();
+
+                    animals.forEach(animal => {
+                        animal.move(foodItems);
+                        animal.consume(foodItems, animals);
+                        let offspring = animal.update(timeScale);
+                        if (offspring) {
+                            animals.push(offspring);
+                            livingAnimals++;
+                        }
+                        animal.draw();
+                    });
+                    foodItems.forEach(food => food.draw());
+
+                    const foodRateSlider = document.getElementById('food-rate');
+                    const foodRate = parseFloat(foodRateSlider.value) / 200;
+                    if (Math.random() < foodRate * timeScale) {
+                        spawnFood();
+                    }
+                }
+
+                requestAnimationFrame(update);
+            }
+
+            function pause() {
+                pauseSimulation = !pauseSimulation;
+            }
+
+            document.getElementById('restart-button').addEventListener('click', restart);
+            document.getElementById('pause-button').addEventListener('click', pause);
+            document.getElementById('spawn-animals').addEventListener('click', function() {
+                for (let i = 0; i < 5; i++) {
+                    const x = Math.random() * (canvas.width - 20) + 10;
+                    const y = Math.random() * (canvas.height - 20) + 10;
+                    const colorIndex = Math.floor(Math.random() * colors.length);
+                    animals.push(new Animal(x, y, colors[colorIndex]));
+                    livingAnimals++;
+                }
+            });
+
+            restart();
+            update();
+        };
+    </script>
+</body>
+</html>
