@@ -16,14 +16,33 @@ window.onload = function() {
     const mutationRateValue = document.getElementById('mutation-rate-value');
     const statusBar = document.getElementById('status-bar');
     const terminalContent = document.getElementById('terminal-content');
+    const simulationContainer = document.getElementById('simulation-container');
+    const headerEl = document.querySelector('header');
+    const controlsEl = document.getElementById('controls');
+    const terminalEl = document.getElementById('terminal');
 
-    function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight - 300; // Adjust for controls, status bar, and terminal
+    function getElementHeight(el) {
+        return el ? el.getBoundingClientRect().height : 0;
     }
 
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
+    function getAvailableViewportSize() {
+        const width = window.innerWidth;
+        const targetHeight = Math.floor(window.innerHeight * 0.7); // 70% of viewport height
+        const height = targetHeight;
+        return { width, height: Math.max(0, height) };
+    }
+
+    function sizeSimulationViewport() {
+        const { width, height } = getAvailableViewportSize();
+        const size = Math.floor(Math.min(width, height));
+        simulationContainer.style.width = size + 'px';
+        simulationContainer.style.height = size + 'px';
+        canvas.width = size;
+        canvas.height = size;
+    }
+
+    window.addEventListener('resize', sizeSimulationViewport);
+    sizeSimulationViewport();
 
     speedSlider.addEventListener('input', function() {
         timeScale = parseFloat(this.value);
